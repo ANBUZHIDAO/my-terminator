@@ -87,6 +87,9 @@ Ubuntu 16下 apt-get install 安装的不是1.91版本，可从这个地址下�
 ## 其他说明
 terminator安装后建议把窗口下的带颜色的标题栏给去掉。
 ![remove-title](picture/tip2.png)
+还可以设置透明度等等，可自己搜索资料设置。
+
+tip.py里可修改 DEBUG_ENABLE = True，然后在系统自带终端下 terminator 来启动，这样可以看到相关日志。
 
 ### 匹配模式
  1、startswith: 'cd b'' 匹配 'cd bin'  

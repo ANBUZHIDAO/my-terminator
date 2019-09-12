@@ -417,8 +417,7 @@ class History():
         if len(self.new_history) == 0 :
             return
 
-        json_data = json.dumps(self.new_history, sort_keys=True, indent=4, separators=(',', ': '))
-        log_debug("write to history:" + json_data)
+        log_debug("write to history:" + str(self.new_history))
 
         his_list = []
         for his in self.new_history:
