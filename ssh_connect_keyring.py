@@ -17,24 +17,40 @@ import terminatorlib.util
 from terminatorlib.factory import Factory
 from terminatorlib.notebook import TabLabel
 import time
-import base64
+import keyring
 
-(CC_COL_IP, CC_COL_USER, CC_COL_PORT, CC_COL_TIME, CC_COL_PASSWD) = range(0,5)
+(CC_COL_IP, CC_COL_USER, CC_COL_PORT, CC_COL_TIME) = range(0,4)
 nowTime = lambda:int(round(time.time() * 1000))
 SSH_CMD = 'sshpass -e ssh -p {port} -o StrictHostKeyChecking=no -o ConnectTimeout=8 -o LogLevel=Error {user}@{ip}'
 SFTP_CMD = 'sshpass -e sftp -P {port} -o StrictHostKeyChecking=no -o ConnectTimeout=8 -o LogLevel=Error {user}@{ip}'
+SYSTEM_NAME = 'terminator_ssh'
 DEBUG_ENABLE = False         # 是否打印DEBUG日志
 
 def log_debug(msg):
     if DEBUG_ENABLE:
         print("[DEBUG]: %s (%s:%d)" % (msg, __file__[__file__.rfind('/')+1:], sys._getframe(1).f_lineno))
 
-#简单使用base64,代码都在这呢，复杂了也没啥用
-def decrypt_passwd(cipher_passwd):
-    return base64.b64decode(cipher_passwd)
+def save_keyring_passwd(ssh_key, passwd):
+    # 密码保存到keyring密钥环
+    keyring.set_password(SYSTEM_NAME, ssh_key, passwd)
 
-def encrypt_passwd(plain_passwd):
-    return base64.b64encode(plain_passwd)
+def delete_keyring_passwd(ssh_key):
+    # 删除keyring密钥环里的密码
+    try:
+      keyring.delete_password(SYSTEM_NAME, ssh_key)
+    except :
+      log_debug("PasswordDeleteError, maybe No such password!")
+    else:
+      log_debug("delete_keyring_passwd success")
+
+def get_keyring_passwd(ssh_key):
+    # 获取keyring密钥环里的密码
+    passwd = keyring.get_password(SYSTEM_NAME, ssh_key)
+    if passwd is None:
+      log_debug("passwd not found")
+      return ''
+    else:
+      return passwd
 
 # Every plugin you want Terminator to load *must* be listed in 'AVAILABLE'
 AVAILABLE = ['SSHConnect']
@@ -60,21 +76,20 @@ class SSHConnect(plugin.MenuItem):
         user = s["user"]
         port = s["port"]
         last_time = s["last_time"]
-        passwd = s["passwd"]
 
         self.cmd_list.append({ 'ip' : ip, 'user' : user, 
-                               'port' : port,'last_time':last_time ,'passwd':passwd 
+                               'port' : port,'last_time':last_time 
                             })
 
     def new_connect_tab0(self, _widget, data, connect_commnd=SSH_CMD):
         ip = data['ip']
         user = data['user']
         port = data['port']
-        passwd = decrypt_passwd(data['passwd']) 
-
         connect_commnd = connect_commnd.format(user=user,ip=ip,port=port)
-        log_debug(connect_commnd)
+        ssh_key = user + '@' + ip
+        passwd = get_keyring_passwd(ssh_key)
 
+        log_debug(connect_commnd)
         self.new_connect_tab(connect_commnd, passwd)
 
     def new_connect_tab(self, command, passwd):
@@ -205,9 +220,8 @@ class SSHConnect(plugin.MenuItem):
         user = ssh_conf['user']
         port = ssh_conf['port']
         last_time = ssh_conf['last_time']
-        passwd = ssh_conf['passwd']
 
-        item = { 'ip': ip, 'user': user, 'port': port, 'last_time': last_time, 'passwd': passwd}
+        item = { 'ip': ip, 'user': user, 'port': port, 'last_time': last_time}
         ssh_key = user+"@"+ip
         config.plugin_set(self.__class__.__name__, ssh_key, item)
 
@@ -232,14 +246,12 @@ class SSHConnect(plugin.MenuItem):
         ssh_conf['ip'] = store.get_value(iter, CC_COL_IP)
         ssh_conf['user'] = store.get_value(iter, CC_COL_USER)
         ssh_conf['port'] = store.get_value(iter, CC_COL_PORT)
-        ssh_conf['passwd'] = store.get_value(iter, CC_COL_PASSWD)
         store.set_value(iter, CC_COL_TIME, nowTime())
 
         self.new_connect_tab0(None, ssh_conf, connect_commnd)
         self.dbox.response(Gtk.ResponseType.ACCEPT)
 
     def configure(self, widget, data = None):
-      self.cur_input = ''
       ui = {}
       dbox = Gtk.Dialog(
                       _("SSH Connections Configuration"),
@@ -255,11 +267,11 @@ class SSHConnect(plugin.MenuItem):
       icon = dbox.render_icon(Gtk.STOCK_DIALOG_INFO, Gtk.IconSize.BUTTON)
       dbox.set_icon(icon)
 
-      store = Gtk.ListStore(str, str, str, long, str)
+      store = Gtk.ListStore(str, str, str, long)
       store.set_sort_column_id(CC_COL_IP, Gtk.SortType.ASCENDING)
 
       for ssh_conf in self.cmd_list:
-        store.append([ssh_conf['ip'], ssh_conf['user'], ssh_conf['port'], long(ssh_conf['last_time']), ssh_conf['passwd']])
+        store.append([ssh_conf['ip'], ssh_conf['user'], ssh_conf['port'], long(ssh_conf['last_time'])])
       
       self.store = store
       self.ssh_filter = self.store.filter_new()
@@ -356,14 +368,13 @@ class SSHConnect(plugin.MenuItem):
         self.cmd_list = []
         i=0
         while iter:
-          (ip, user, port,last_time,passwd) = store.get(iter,
+          (ip, user, port,last_time) = store.get(iter,
                                               CC_COL_IP,
                                               CC_COL_USER,
                                               CC_COL_PORT,
-                                              CC_COL_TIME,
-                                              CC_COL_PASSWD)
+                                              CC_COL_TIME)
           self.cmd_list.append({'ip' : ip,     'user': user, 
-                                'port' : port, 'last_time':last_time, 'passwd':passwd})
+                                'port' : port, 'last_time':last_time})
           iter = store.iter_next(iter)
           i = i + 1
 
@@ -427,7 +438,7 @@ class SSHConnect(plugin.MenuItem):
         item['ip'] = ip.get_text()
         item['user'] = user.get_text()
         item['port'] = port.get_text()
-        item['passwd'] = encrypt_passwd(passwd.get_text()) 
+        item['passwd'] = passwd.get_text()
         if item['ip'] == '' or item['user'] == '' or item['port'] == '':
           err = Gtk.MessageDialog(dialog,
                                   Gtk.DialogFlags.MODAL,
@@ -457,7 +468,8 @@ class SSHConnect(plugin.MenuItem):
 
             iter = store.iter_next(iter)
           if not ssh_exist:
-            store.insert(0, (item['ip'], item['user'], item['port'], nowTime(), item['passwd']))
+            store.insert(0, (item['ip'], item['user'], item['port'], nowTime()))
+            save_keyring_passwd(ssh_key, item['passwd'])
             self.update_cmd_list(store)
             self._save_config()
           else:
@@ -472,6 +484,8 @@ class SSHConnect(plugin.MenuItem):
       store = store_filter.get_model()
       iter = store_filter.convert_iter_to_child_iter(filter_iter)
       if iter:
+        ssh_key =  store.get_value(iter, CC_COL_USER) + '@' + store.get_value(iter, CC_COL_IP)
+        delete_keyring_passwd(ssh_key)
         store.remove(iter)
         self.update_cmd_list(store)
         self._save_config()
@@ -494,7 +508,7 @@ class SSHConnect(plugin.MenuItem):
                                                 ip_var = store.get_value(iter, CC_COL_IP),
                                                 user_var = store.get_value(iter, CC_COL_USER),
                                                 port_var = store.get_value(iter, CC_COL_PORT),
-                                                passwd_var = decrypt_passwd(store.get_value(iter, CC_COL_PASSWD))
+                                                passwd_var = get_keyring_passwd(old_ssh_key)
                                                                   )
       res = dialog.run()
       item = {}
@@ -502,7 +516,7 @@ class SSHConnect(plugin.MenuItem):
         item['ip'] = ip.get_text()
         item['user'] = user.get_text()
         item['port'] = port.get_text()
-        item['passwd'] = encrypt_passwd(passwd.get_text())
+        item['passwd'] = passwd.get_text()
         if item['ip'] == '' or item['user'] == '' or item['port'] == '':
           err = Gtk.MessageDialog(dialog,
                                   Gtk.DialogFlags.MODAL,
@@ -534,10 +548,12 @@ class SSHConnect(plugin.MenuItem):
                       CC_COL_IP,   item['ip'],
                       CC_COL_USER, item['user'],
                       CC_COL_PORT, item['port'],
-                      CC_COL_TIME, nowTime(),
-                      CC_COL_PASSWD, item['passwd']
+                      CC_COL_TIME, nowTime()
                       )
-
+            # 如果用户名和密码改变了则需要删除原来的密码
+            if old_ssh_key != ssh_key:
+              delete_keyring_passwd(old_ssh_key)
+            save_keyring_passwd(ssh_key,item['passwd'])
             self.update_cmd_list(store)
             self._save_config()
           else:

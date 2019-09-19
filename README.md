@@ -1,7 +1,6 @@
 # my-terminator
 terminator with autosuggestion
 
-
 ## 简介
 本项目是在 terminator 1.91基础上，开发了自动提示功能的功能。 
 zsh-autosuggestion使用起来实际上已经很方便了，但是zsh在个人电脑上安装居多，一般在其他服务器及sftp等情况下不能提示。  
@@ -47,8 +46,7 @@ zsh-autosuggestion使用起来实际上已经很方便了，但是zsh在个人�
 提示框非遮罩，在任何情况下，继续输入字符或粘贴都可以继续正常输入，提示框只会处理Up，Down，Enter三个键。  
 
 2、ssh连接插件   
-使用插件简单配置SSH连接，保存SSH密码，并右键快速打开
-密码保存到密钥环 keyring，所以需要安装python依赖 pip install keyring
+使用插件简单配置SSH连接，保存SSH密码，并右键快速打开  
 创建ssh连接时是先打开一个tab页，然后使用sshpass来自动连接。 所以需要安装sshpass依赖。
 
 密码不是必填项，如果配置了免密登录，则可以不输入密码 
@@ -74,14 +72,13 @@ Ubuntu 16下 apt-get install 安装的不是1.91版本，可从这个地址下�
 
 前面2步是关于自动提示功能的
 
-3、安装python依赖 pip install keyring
-4、安装sshpass
+3、安装sshpass
     Ubuntu:  apt-get install sshpass
 
-5、复制 ssh_connect.py 到 /usr/share/terminator/terminatorlib/plugins目录下
+4、复制 ssh_connect.py 到 /usr/share/terminator/terminatorlib/plugins目录下
         插件需要打开Terminator后启用这个插件才能正常使用。
 
-这三步是关于ssh连接插件的，两者互不干扰。可只安装使用其中一个功能。
+这两步是关于ssh连接插件的，两者互不干扰。可只安装使用其中一个功能。
 ```
 
 ## 其他说明
@@ -89,7 +86,6 @@ terminator安装后建议把窗口下的带颜色的标题栏给去掉。
 ![remove-title](picture/tip2.png)
 还可以设置透明度等等，可自己搜索资料设置。
 
-tip.py里可修改 DEBUG_ENABLE = True，然后在系统自带终端下 terminator 来启动，这样可以看到相关日志。
 
 ### 匹配模式
  1、startswith: 'cd b'' 匹配 'cd bin'  
@@ -116,16 +112,16 @@ last_time: 命令出现的最后时间
  
 
 ### ssh密码被保存在哪里了
+简单base64 保存在 ~/.config/terminator/config（也就是terminator的配置文件）中
+
+如果嫌这样不安全，可以 安装python依赖 pip install keyring  
+然后使用  ssh_connect_keyring.py 替换 ssh_connect.py  
+这样密码被保存在Keyring中
 比如Ubuntu操作系统下Chrome的自动保存密码功能实际上就是保存在Keyring里了    
 在应用里搜索keyring或seahorse,中文下会显示搜索到 密码和秘钥（seahorse），打开可以看到    
 ![Keyring1](picture/Keyring1.png)
 实际上密码文件应该是位于 $HOME/.local/share/keyrings 下   
 
-### Keyring可能带来的问题
-通常情况下Keyring的"登录"密码就是账号登录密码，在登录桌面后自然而然就可以获取到Keyring里的密码。  
-但是如果Keyring的"登录"密码与账号登录密码不一样的情况下，可能会出现点问题。
-这种情况下可以修改Keyring的"登录"密码与账号登录密码一致即可。 
-![Keyring2](picture/Keyring2.png)
 
 ## 已知问题
 VTE并没有现成的可靠的API可以获取输入及输出，还要处理很多特殊情况，因此自动提示功能并不十分正确。  
