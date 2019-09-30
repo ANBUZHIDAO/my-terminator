@@ -19,6 +19,7 @@ import sqlite3
 import uuid
 import math
 import cgi
+from collections import OrderedDict
 
 def adapt_datetime(ts):
     return time.mktime(ts.timetuple())
@@ -29,7 +30,7 @@ nowTime = lambda:int(round(time.time() * 1000))
 db_file = os.path.join(os.path.expanduser('~'), '.terminator.db')
 start_blank = re.compile("^\s{2,}")
 exclude_cmds = ["clear"]
-SUGGESTION_NUM = 10         # 提示框展示的提示命令的最大数量
+SUGGESTION_NUM = 8         # 提示框展示的提示命令的最大数量
 MAX_HIS_NUM = 8000          # history记录数大于此数时，删除前 DELETE_NUM条。出现性能问题后可先把这个值调小，再想其他办法解决
 DELETE_NUM = 2000           # 删除时删除前多少条
 MAX_STAT_NUM = 800          # cmd数量最大800，多出的删除。出现性能问题后可先把这个值调小，再想其他办法解决
@@ -54,6 +55,40 @@ def log_debug(msg):
 def log_info(msg):
     print '\033[32m' + msg + "\033[0m"
 
+def timing(f):
+    def wrap(*args):
+        time1 = time.time()
+        ret = f(*args)
+        time2 = time.time()
+        print '%s function took %0.5f ms' % (f.func_name, (time2-time1)*1000.0)
+        return ret
+    return wrap
+
+class LRUCache(OrderedDict):
+    def __init__(self, size=128):
+        self.size = size,
+        self.cache = OrderedDict()
+ 
+    def get(self, key):
+        if self.cache.has_key(key):
+            val = self.cache.pop(key)
+            self.cache[key] = val
+        else:
+            val = None
+ 
+        return val
+ 
+    def set(self, key, val):
+        if self.cache.has_key(key):
+            val = self.cache.pop(key)
+            self.cache[key] = val
+        else:
+            if len(self.cache) == self.size:
+                self.cache.popitem(last=False)
+                self.cache[key] = val
+            else:
+                self.cache[key] = val
+
 def split_word(str):
     s_list = re.split("\W+",str)
 
@@ -64,13 +99,23 @@ def split_word(str):
     return s_list
 
 # simple two string match
-def match_str_by_words(str1, str2):       
+str_match_cache = LRUCache(size=2000)
+#@timing
+def match_str_by_words(str1, str2): 
+    key = str1+":"+str2
+    cache_match =  str_match_cache.get(key) 
+    if cache_match is not None:
+        return cache_match
+
     l_match = left_match_str_by_words(str1, str2)
     if l_match >= 0.5:
+        str_match_cache.set(key, l_match)
         return l_match
         
     r_match = right_match_str_by_words(str1, str2)
-    return (l_match if(l_match > r_match) else r_match)
+    bigger_match = (l_match if(l_match > r_match) else r_match)
+    str_match_cache.set(key, bigger_match)
+    return bigger_match
 
 def left_match_str(str1, str2):
     i,j = len(str1),len(str2)
@@ -150,10 +195,20 @@ def right_match_str_by_words(str1, str2):
     r_match = float(2*m)/(size1+size2)
     return r_match
 
+p_match_cache = LRUCache(size=2000)
+#@timing
 def prefix_match_str(str1, str2):
-    #prefix是从后往前匹配，且去掉尾部可能存在的特殊字符
-    return right_match_str_by_words(str1,str2)
+    key = str1+":"+str2
+    cache_match =  p_match_cache.get(key) 
+    if cache_match is not None:
+        return cache_match
 
+    #prefix是从后往前匹配，且去掉尾部可能存在的特殊字符
+    prefix_match = right_match_str_by_words(str1,str2)
+    p_match_cache.set(key, prefix_match)
+    return prefix_match
+
+#@timing
 def precmd_match_str(str1, str2):
 
     s1 = str1.split()
@@ -1030,33 +1085,28 @@ class Tip(Gtk.Window):
     # 2、中间模糊匹配   'bi' 匹配 'cd bin'
     # 3、命令完全匹配，变量模糊匹配  'cd i' 匹配 'cd bin'
     # 第2和第3种场景为了避免出现如cd 匹配到 git commitid: 384fb8b63bcd1abb37fa09d2416aeb155e57fac6 的这种情况 用正则进行过滤
-    def find_match(self, input, his_cmd):
-        input_len = len(input)
-        if his_cmd.startswith(input):
+    def find_match(self, cur_input, cur_cmd, cur_args, cur_pattern, his_cmd):
+        input_len = len(cur_input)
+        if his_cmd.startswith(cur_input):
             return 0, 0, 0, input_len
         
         #当输入长度大于等于2,小于等于20时，才进行模糊匹配
         if input_len < 2 or input_len > 20:
             return -1, -1, -1, -1
-        #如果时不带空格的情况下 x是-1，则args是全部input
-        x = input.find(' ')
-        cmd = input[:x+1]
-        args = input[x+1:]
-
-        input_pattern = r'^'+ re.escape(cmd) + r'(.*\W)?(\w*('+ re.escape(args) + r')\w*)((\W.*)|$)'
-        matchObj = re.search( input_pattern, his_cmd, re.U) 
+        
+        matchObj = cur_pattern.search(his_cmd) 
         if matchObj:
             match_region = matchObj.span(3)
             in_word = matchObj.group(2)
             #log_debug(in_word)
             # 如果 匹配到的部分在一个单词中，单词前后其他部分小于等于20才认为是匹配，用于过滤 模糊匹配到 git 的 commitid等情况
             if len(in_word) - input_len <= 20:
-                return len(args),len(cmd), match_region[0], match_region[1]
+                return len(cur_args),len(cur_cmd), match_region[0], match_region[1]
 
         return -1, -1, -1, -1
 
-    def reshow_suggestion_list(self,terminal,showx,showy,current_cmd):
-        log_debug("reshow_suggestion_list:"+ current_cmd)
+    def reshow_suggestion_list(self,terminal,showx,showy,cur_input):
+        log_debug("reshow_suggestion_list:"+ cur_input)
 
         # 销毁后重建提示框
         self.tip_window.destroy()
@@ -1064,7 +1114,7 @@ class Tip(Gtk.Window):
         self.tip_window.override_font(terminal.get_font().copy())
 
         select_pattern = self.recorder[terminal].get("pattern",None)
-        if select_pattern is not None and select_pattern.match(current_cmd):
+        if select_pattern is not None and select_pattern.match(cur_input):
             log_info("in common cmd mode")
             return
         else:
@@ -1072,23 +1122,45 @@ class Tip(Gtk.Window):
 
         # 将要添加的提示
         list_add = []
-        match_len = len(current_cmd)
+        match_len = len(cur_input)
+        #如果时不带空格的情况下 x是-1，则args是全部input
+        x = cur_input.find(' ')
+        cur_cmd = cur_input[:x+1]
+        cur_args = cur_input[x+1:]
+        cur_pattern = re.compile(r'^'+ re.escape(cur_cmd) + r'(.*\W)?(\w*('+ re.escape(cur_args) + r')\w*)((\W.*)|$)', re.U)
+
+        #获取当前的 title pre_cmd prefix 用于计算
+        title = self.get_window_title(terminal)
+        pre_cmd = self.recorder[terminal]["pre_cmd"]
+
+        row_content = self.recorder[terminal]["row_content"]
+        min_col = self.recorder[terminal]["min_col"] 
+        prefix = row_content[0:min_col].strip()
+
+        # 缓存此次计算出的结果
+        key = "--".join((title , pre_cmd , prefix))
+        self.recorder[terminal].setdefault("cache",{})
+        if self.recorder[terminal]["cache"].get("__key__",) != key:
+            self.recorder[terminal]["cache"] = {}
+            self.recorder[terminal]["cache"]["__key__"] = key
 
         cur_is_hiscmd = False
         for cmd, stat in his_recorder.history_stat.items():
-            if cmd == current_cmd:
+            if cmd == cur_input:
                 cur_is_hiscmd = True
                 continue
-            back_len,start1,end1,start2  = self.find_match(current_cmd, cmd)
+
+            back_len,start1,end1,start2  = self.find_match(cur_input,cur_cmd,cur_args,cur_pattern,cmd)
             if back_len >=0 and len(cmd) > 3:
-                self.calculate_and_add(terminal, cmd, stat, back_len, start1, end1, start2, list_add)
+                self.calculate_and_add(terminal, title, pre_cmd, prefix, cmd, stat, back_len, start1, end1, start2, list_add)
 
         #根据总得分排序，最多取前十个
         list_add.sort(key=by_score,reverse = True)
-        if len(list_add) > 12:
-            list_add = list_add[:12]
+        max_num = int(round(SUGGESTION_NUM * 1.5))
+        if len(list_add) > max_num:
+            list_add = list_add[:max_num]
 
-        self.process_common(current_cmd,list_add)
+        self.process_common(cur_input,list_add)
 
         #根据总得分排序，最多取前十个
         list_add.sort(key=by_score,reverse = True)
@@ -1110,7 +1182,7 @@ class Tip(Gtk.Window):
             return
 
         # 如果当前输入不是一个历史命令,且最后不是一个空格就自动选中第一个
-        if AUTO_SELECT_ENABLE and not cur_is_hiscmd and current_cmd[-1:] != ' ' and current_cmd not in exclude_cmds:
+        if AUTO_SELECT_ENABLE and not cur_is_hiscmd and cur_input[-1:] != ' ' and cur_input not in exclude_cmds:
             # 自动选中第一个 1秒后取消自动选中
             self.listbox.set_selection_mode(Gtk.SelectionMode.SINGLE)
             self.listbox.select_row(self.listbox.get_row_at_index(0))
@@ -1145,29 +1217,24 @@ class Tip(Gtk.Window):
         return False   #结束定时
 
     #计算得分 cmd是历史命令，stat是统计数据 back_len是需要回退的长度，end1是第一段输入结束的索引 start2是第二段输入开始的索引 list_add是加入的提示列表
-    def calculate_and_add(self, terminal, cmd, stat, back_len, start1, end1, start2, list_add):
+    def calculate_and_add(self, terminal, title, pre_cmd, prefix, cmd, stat, back_len, start1, end1, start2, list_add):
+
+        #如果已缓存，则尝试取缓存
+        cache_result = self.recorder[terminal]["cache"].get(cmd, None)
+        if cache_result is not None:
+            log_debug("from cache")
+            cache_result.update({"back_len":back_len, "start1":start1, "end1": end1,"start2":start2 })
+            list_add.append(cache_result)
+            return
+
         score = 0
-        title = self.get_window_title(terminal)
-        pre_cmd = self.recorder[terminal]["pre_cmd"]
-
-        row_content = self.recorder[terminal]["row_content"]
-        min_col = self.recorder[terminal]["min_col"] 
-        prefix = row_content[0:min_col].strip()
-
         count = stat["count"]
         last_time = stat["last_time"]  # not used now
                 
         # 计算分数  使用 x/(base+x)
         title_match, title_count, title_relation = max_match_str(title,stat["titles"])
-        if title_relation > 0.7:
-            if title_match < title_relation:  # 关联度高 匹配度低
-                title_match = title_match / 2
-        else:
-            if title_match < 0.5:
-                title_match = 0.5
 
         title_score = title_match * (float(title_count)/(1 + title_count)) 
-        score = score + title_score
 
         # pre_cmds转化为 {"cmd":total_count} 的结构 再去匹配
         to_match_precmds = {}
@@ -1182,29 +1249,16 @@ class Tip(Gtk.Window):
             to_match_precmds[precmd] = precmd_count
 
         pre_cmd_match, pre_cmd_count, pre_cmd_relation  = max_match_str(pre_cmd, to_match_precmds, 2)
-        if pre_cmd_relation > 0.7:
-            if pre_cmd_match < pre_cmd_relation:  # 关联度高 匹配度低
-                pre_cmd_match = pre_cmd_match / 2
-        else:
-            if pre_cmd_match < 0.5:
-                pre_cmd_match = 0.5
 
         precmd_score = pre_cmd_match * (float(pre_cmd_count)/(1 + pre_cmd_count))
-        score = score + precmd_score
 
 
         prefix_match, prefix_count, prefix_relation  = max_match_str(prefix, stat["prefixs"], 1)
-        if prefix_relation > 0.7:
-            if prefix_match < prefix_relation:  # 关联度高 匹配度低
-                prefix_match = prefix_match / 2
-        else:
-            if prefix_match < 0.5:
-                prefix_match = 0.5
 
         prefix_score = prefix_match * (float(prefix_count)/(3 + prefix_count)) 
-        score = score + prefix_score
 
-        phase1_score = score   # 未计算数量之前的得分
+        phase1_score = 3 * (title_score * title_relation + precmd_score * pre_cmd_relation + prefix_score * prefix_relation)\
+            /(title_relation + pre_cmd_relation + prefix_relation)
 
         now = nowTime()
         period = now - last_time   #毫秒
@@ -1218,29 +1272,39 @@ class Tip(Gtk.Window):
         # 最后得分减去时间分数，以此来用于将很久之前的历史命令降低排名,待观察是否必要
         period_score = float(week_period)/(1 + week_period)
 
-        # count_score 值范围是 0.2 到 1 之间
-        count_score = float(count)/(5 + count)
-        score = score + count_score - period_score
+        # 总的数量 count_score 值范围是 0.5 到 1 之间 暂无用
+        count_score = float(count)/(1 + count)
+        score = phase1_score  - period_score
 
         if DEBUG_ENABLE:
-            list_add.append({"cmd":cmd,"phase1_score":phase1_score, "score":score,
+            append_result = {"cmd":cmd,"phase1_score":phase1_score, "score":score,
             "title_match":title_match, "title_count":title_count, "title_score":title_score,
             "pre_cmd_match":pre_cmd_match, "pre_cmd_count":pre_cmd_count, "precmd_score":precmd_score,
             "prefix_match":prefix_match, "prefix_count":prefix_count, "prefix_score":prefix_score,
             "period_score":period_score, "count": count, "count_score":count_score,
-            "back_len":back_len, "start1":start1, "end1": end1,"start2":start2})
+            "back_len":back_len, "start1":start1, "end1": end1,"start2":start2}
         else:
-            list_add.append({"cmd":cmd,"phase1_score":phase1_score,"count": count,
+            append_result = {"cmd":cmd,"phase1_score":phase1_score,"count": count,
                 "period_score": period_score, "score":score, "back_len":back_len,
-                "start1":start1, "end1": end1,"start2":start2})
+                "start1":start1, "end1": end1,"start2":start2}
+
+        list_add.append(append_result)
+        #设置缓存
+        self.recorder[terminal]["cache"][cmd] = append_result
     
     # 处理当前的list_add是否有公共命令
-    def process_common(self, current_cmd, list_add):
+    def process_common(self, cur_input, list_add):
         log_debug("process_common")
+        #如果时不带空格的情况下 x是-1，则args是全部input
+        x = cur_input.find(' ')
+        cur_cmd = cur_input[:x+1]
+        cur_args = cur_input[x+1:]
+        cur_pattern = re.compile(r'^'+ re.escape(cur_cmd) + r'(.*\W)?(\w*('+ re.escape(cur_args) + r')\w*)((\W.*)|$)')
+
         matched_commons = []
         for common_cmd in his_recorder.all_common_cmds:
-            back_len,start1,end1,start2  = self.find_match(current_cmd, common_cmd["cmd"])
-            if back_len < 0 or common_cmd["cmd"] == current_cmd:
+            back_len,start1,end1,start2  = self.find_match(cur_input,cur_cmd,cur_args,cur_pattern,common_cmd["cmd"])
+            if back_len < 0 or common_cmd["cmd"] == cur_input:
                 continue
 
             # 给公共命令组装 编译后的 正则
