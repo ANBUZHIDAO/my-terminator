@@ -13,7 +13,6 @@ from terminatorlib.config import Config
 from terminatorlib.translation import _
 from terminatorlib.util import get_config_dir, err, dbg, gerr, shell_lookup
 
-import terminatorlib.util
 from terminatorlib.factory import Factory
 from terminatorlib.notebook import TabLabel
 import time
@@ -54,7 +53,7 @@ class SSHConnect(plugin.MenuItem):
       for part in sections:
         s = sections[part]
         if not (s.has_key("ip") and s.has_key("user")):
-          print "SSH Configuration: Ignoring section %s" % s
+          print("SSH Configuration: Ignoring section %s" % s)
           continue
         ip = s["ip"]
         user = s["user"]
@@ -255,11 +254,11 @@ class SSHConnect(plugin.MenuItem):
       icon = dbox.render_icon(Gtk.STOCK_DIALOG_INFO, Gtk.IconSize.BUTTON)
       dbox.set_icon(icon)
 
-      store = Gtk.ListStore(str, str, str, long, str)
+      store = Gtk.ListStore(str, str, str, int, str)
       store.set_sort_column_id(CC_COL_IP, Gtk.SortType.ASCENDING)
 
       for ssh_conf in self.cmd_list:
-        store.append([ssh_conf['ip'], ssh_conf['user'], ssh_conf['port'], long(ssh_conf['last_time']), ssh_conf['passwd']])
+        store.append([ssh_conf['ip'], ssh_conf['user'], ssh_conf['port'], int(ssh_conf['last_time']), ssh_conf['passwd']])
       
       self.store = store
       self.ssh_filter = self.store.filter_new()
