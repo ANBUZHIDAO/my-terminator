@@ -18,7 +18,6 @@ import html
 def adapt_datetime(ts):
     return time.mktime(ts.timetuple())
 
-
 sqlite3.register_adapter(datetime.datetime, adapt_datetime)
 
 db_file = os.path.join(os.path.expanduser('~'), '.terminator.db')

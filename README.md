@@ -2,10 +2,9 @@
 terminator with autosuggestion
 
 ## 简介
-本项目是在 terminator 1.91基础上，开发了自动提示功能的功能。 
+本项目是在 terminator 基础上，开发了自动提示功能的功能。 
 zsh-autosuggestion使用起来实际上已经很方便了，但是zsh在个人电脑上安装居多，一般在其他服务器及sftp等情况下不能提示。  
-此项目是在终端工具terminator基础上实现了扩展，  在ssh远程登录到服务器或者在sftp、redis等各类命令行下仍然可以进行提示。   
-同时为了方便使用terminator来进行ssh连接，写了ssh连接插件，简单记录ssh配置及密码，自动打开新窗口创建ssh连接。
+此项目是在终端工具terminator基础上实现了扩展，  在ssh远程登录到服务器或者在sftp、redis等各类命令行下仍然可以进行提示。
 
 ## 使用
 ### 自动提示的使用
@@ -13,15 +12,8 @@ zsh-autosuggestion使用起来实际上已经很方便了，但是zsh在个人�
 
 ![tip1.gif](picture/tip1.gif)
 
-### ssh连接配置
-提供简单配置ssh连接功能，保存ip，用户名，密码，ssh端口号，右键默认展示最近使用的10个ssh连接供快速打开。  
-请看gif图  
-![ssh_connect.gif](picture/ssh_connect.gif)
-
 ## 基本原理
-主要有2个功能  
 
-1、自动提示功能  
 主要处理 vte的key-press-event 和commit事件和contents-changed 事件
 
 处理key-press-event、 terminal_commit 事件，  
@@ -45,41 +37,18 @@ zsh-autosuggestion使用起来实际上已经很方便了，但是zsh在个人�
 
 提示框非遮罩，在任何情况下，继续输入字符或粘贴都可以继续正常输入，提示框只会处理Up，Down，Enter三个键。  
 
-2、ssh连接插件   
-使用插件简单配置SSH连接，保存SSH密码，并右键快速打开  
-创建ssh连接时是先打开一个tab页，然后使用sshpass来自动连接。 所以需要安装sshpass依赖。
-
-密码不是必填项，如果配置了免密登录，则可以不输入密码 
-
-想看相关debug日志的，可开启tip.py和ssh_connect.py里的 DEBUG_ENABLE = True  
+想看相关debug日志的，可修改utils.py中DEBUG_ENABLE = True  
 然后命令行下 terminator 来启动 terminator即可看到一些deug日志
 
 ## 安装方法
+将相关python文件复制到terminator的插件目录
+```bash
+mkdir -p $HOME/.config/terminator/plugins
+cp .*.py $HOME/.config/terminator/plugins/
 ```
-1、安装 terminator 1.91
-terminator下载安装地址  https://pkgs.org/download/terminator
-Ubuntu 18可以直接 apt-get install terminator  
-Ubuntu 16下 apt-get install 安装的不是1.91版本，可从这个地址下载 terminator_1.91-1_all.deb 来安装1.91版本  
-其他Linux操作系统的没测试过。 
 
-安装后需要注意 terminator的安装目录  
-一般Ubuntu使用apt或者deb安装包安装的情况下，位于  /usr/share/terminator  
-还有的使用压缩包里的setup.py安装的话，可能位于 /usr/local/lib/python2.7/dist-packages/terminatorlib  
-其他操作系统可能位于其他目录，如果是在其他目录下面步骤请注意替换相应目录。
-
-2、 复制  terminal.py tip.py 到 /usr/share/terminator/terminatorlib 下即可  
-        terminal.py将会覆盖原来的文件， tip.py是新文件
-
-前面2步是关于自动提示功能的
-
-3、安装sshpass
-    Ubuntu:  apt-get install sshpass
-
-4、复制 ssh_connect.py 到 /usr/share/terminator/terminatorlib/plugins目录下
-        插件需要打开Terminator后启用这个插件才能正常使用。
-
-这两步是关于ssh连接插件的，两者互不干扰。可只安装使用其中一个功能。
-```
+然后重新打开terminator，右键打开配置文件首选项，点击插件即可开启插件。  
+![enable-plugin](picture/tip0.png)
 
 ## 其他说明
 terminator安装后建议把窗口下的带颜色的标题栏给去掉。
@@ -109,18 +78,6 @@ last_time: 命令出现的最后时间
 ### 删除错误记录
 1、如果输入错误或bug导致记录历史有误，可右键 View Hostory查看历史，搜索并删除这一条输入错误的历史命令
 因为 View Hostory 的目的就是为了删除错误命令的，因此只有总的记录次数小于5的才被搜索展示出来，并可以删除。
- 
-
-### ssh密码被保存在哪里了
-简单base64 保存在 ~/.config/terminator/config（也就是terminator的配置文件）中
-
-如果嫌这样不安全，可以 安装python依赖 pip install keyring  
-然后使用  ssh_connect_keyring.py 替换 ssh_connect.py  
-这样密码被保存在Keyring中
-比如Ubuntu操作系统下Chrome的自动保存密码功能实际上就是保存在Keyring里了    
-在应用里搜索keyring或seahorse,中文下会显示搜索到 密码和秘钥（seahorse），打开可以看到    
-![Keyring1](picture/Keyring1.png)
-实际上密码文件应该是位于 $HOME/.local/share/keyrings 下   
 
 
 ## 已知问题
@@ -145,8 +102,4 @@ VTE并没有现成的可靠的API可以获取输入及输出，还要处理很�
 | https://lazka.github.io/pgi-docs/index.html#Gtk-3.0                        |   Python GTK3.0  |  
 | https://lazka.github.io/pgi-docs/index.html#Vte-2.91                      |   Vte 2.91                |  
 | https://python-gtk-3-tutorial.readthedocs.io/en/latest/                  |   Python GTK+ 3 Tutorial    |  
-| https://github.com/jaraco/keyring                                                             |   Keyring   |  
-
-最后，老婆在卖茶叶，信阳毛尖（100/斤起）原产地发货，感兴趣的可加此微信。搬砖不易，感谢支持！勿喷，捂脸！
-![微信二维码](picture/1646664512.jpg)
 

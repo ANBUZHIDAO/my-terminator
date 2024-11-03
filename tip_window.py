@@ -20,7 +20,6 @@ start_blank = re.compile(r'^\s{2,}')
 
 exclude_cmds = ["clear"]
 SUGGESTION_NUM = 8         # 提示框展示的提示命令的最大数量
-AUTO_TIP_WAIT = 3500        # 自动提示显示多久自动关闭
 
 INTERVAL_LEVEL = [5000, 10000, 15000, 60000, 300000, 600000]
 
@@ -276,6 +275,8 @@ class TipWindow(Gtk.Window):
                     else:
                         if 'clear' == last_cmd:
                             self.recorder[terminal]["cmd_content"] = ""
+                            # 从某个版本后出现clear后get_cursor_position不准确导致提示框位置异常，尝试了各种方法，发现将滚动条重新设置一遍后get_cursor_position恢复正常
+                            # 因此这里主动触发一下do_scrollbar_toggle()，在on_contents_change里会判断并再次do_scrollbar_toggle()将滚动条设置恢复
                             self.recorder[terminal]["t_terminal"].do_scrollbar_toggle()
                             self.recorder[terminal]["clear_do_scrollbar_toggle"] = "true"
                         log_debug("not record because of last_cmd:" + last_cmd)
